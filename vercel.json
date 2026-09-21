@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/",
+      "destination": "/hhh-ads-manager.html"
+    }
+  ]
+}
