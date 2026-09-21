@@ -16,7 +16,9 @@ Create a separate Vercel project from this folder and configure the same environ
 - `HHL_APPS_SCRIPT_SECRET`
 - `HHL_APPS_SCRIPT_TIMEOUT_MS` (optional)
 
-The current Apps Script feed already contains the fields needed for campaign-level reporting, so this project does not modify `Code.gs`. Exact lead and sale attribution below the campaign level will require ad-set and ad IDs to be added to the feed later.
+The Ads Manager requests `format=adsmanager`, a compact array-based response prepared by the matching `Code.gs`. This avoids sending long URLs, duplicate hierarchy paths and repeated JSON object keys. Exact lead and sale attribution below the campaign level will require ad-set and ad IDs to be added to the source data later.
+
+Normal page loads use a five-minute edge and memory cache. The refresh button bypasses that cache and requests the newest Apps Script snapshot.
 
 ## Ownership separation
 

@@ -42,6 +42,7 @@ function runHandler(handler, req, res) {
 
 http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
+  req.query = Object.fromEntries(url.searchParams.entries());
   if (url.pathname === "/api/reporting-data") return runHandler(reportingData, req, res);
   if (url.pathname === "/agency-engineer-icon.png") {
     return sendFile(res, path.join(__dirname, "agency-engineer-icon.png"), "image/png");

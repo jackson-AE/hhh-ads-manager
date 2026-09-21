@@ -7,6 +7,8 @@ const CONFIG = {
 };
 
 let lastGoodData = null;
+let lastLoadedAt = 0;
+const MEMORY_CACHE_MS = 5 * 60 * 1000;
 
 function requestJson(url, redirects = 0) {
   return new Promise((resolve, reject) => {
@@ -33,20 +35,27 @@ function requestJson(url, redirects = 0) {
   });
 }
 
-async function loadReportingData() {
+async function loadReportingData(forceRefresh = false) {
   if (!CONFIG.appsScriptUrl || !CONFIG.appsScriptSecret) {
     throw new Error("Apps Script dashboard connection is not configured");
   }
 
+  if (!forceRefresh && lastGoodData && Date.now() - lastLoadedAt < MEMORY_CACHE_MS) {
+    return Object.assign({ stale: false, warning: "" }, lastGoodData);
+  }
+
   const url = new URL(CONFIG.appsScriptUrl);
   url.searchParams.set("key", CONFIG.appsScriptSecret);
+  url.searchParams.set("format", "adsmanager");
 
   try {
     const payload = await requestJson(url.toString());
     lastGoodData = {
+      columns: payload.columns || [],
       rows: payload.rows || [],
       dataUpdatedAt: payload.dataUpdatedAt || payload.updatedAt || "",
     };
+    lastLoadedAt = Date.now();
     return Object.assign({ stale: false, warning: "" }, lastGoodData);
   } catch (err) {
     if (lastGoodData) {
@@ -67,9 +76,14 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const data = await loadReportingData();
-    res.setHeader("Cache-Control", "no-store");
+    const forceRefresh = Boolean(req.query && req.query.refresh);
+    const data = await loadReportingData(forceRefresh);
+    res.setHeader(
+      "Cache-Control",
+      forceRefresh ? "no-store" : "public, s-maxage=300, stale-while-revalidate=900"
+    );
     res.status(200).json({
+      columns: data.columns || [],
       rows: data.rows,
       dataUpdatedAt: data.dataUpdatedAt,
       updatedAt: data.dataUpdatedAt,

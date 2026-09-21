@@ -668,8 +668,10 @@ function demoRows(){
   return rows;
 }
 function apiPath(path){return (location.protocol==="file:"?"http://127.0.0.1:8787":"")+path}
-async function loadData(){
-  const response=await fetch(CONFIG.dataUrl,{cache:"no-store",credentials:"same-origin"});
+async function loadData(forceRefresh=false){
+  const separator=CONFIG.dataUrl.includes("?")?"&":"?";
+  const url=forceRefresh?CONFIG.dataUrl+separator+"refresh="+Date.now():CONFIG.dataUrl;
+  const response=await fetch(url,{cache:forceRefresh?"no-store":"default",credentials:"same-origin"});
   if(!response.ok){
     let detail="";
     try{
@@ -680,7 +682,14 @@ async function loadData(){
   }
   const payload=await response.json();
   LIVE_TS=payload.dataUpdatedAt||"";
-  return mapRows(payload.rows||[]);
+  const columns=Array.isArray(payload.columns)?payload.columns:[];
+  const rows=(payload.rows||[]).map(row=>{
+    if(!columns.length||!Array.isArray(row))return row;
+    const output={};
+    columns.forEach((column,index)=>{output[column]=row[index]==null?"":row[index]});
+    return output;
+  });
+  return mapRows(rows);
 }
 function setMode(mode,text){
   MODE=mode;
@@ -1519,7 +1528,7 @@ async function boot(preserveState=false){
   $("refreshBtn").classList.add("spin");
   $("dataNotice").classList.add("hidden");
   try{
-    const rows=await loadData();
+    const rows=await loadData(preserveState);
     if(!rows.length)throw new Error("No reporting rows returned");
     DATA=rows;
     if(preserveState)reconcileHierarchy();else resetHierarchy();
