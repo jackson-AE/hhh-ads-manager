@@ -700,8 +700,12 @@ function dataForCurrentOffer(){
   return DATA;
 }
 function setBounds(preserveState=false){
-  let dates=dataForCurrentOffer().map(row=>+row.date);
-  if(!dates.length)dates=DATA.map(row=>+row.date);
+  let dates=dataForCurrentOffer().flatMap(row=>[+row.date,
+    row.customerSaleDate instanceof Date&&!isNaN(row.customerSaleDate)?+row.customerSaleDate:NaN
+  ]).filter(Number.isFinite);
+  if(!dates.length)dates=DATA.flatMap(row=>[+row.date,
+    row.customerSaleDate instanceof Date&&!isNaN(row.customerSaleDate)?+row.customerSaleDate:NaN
+  ]).filter(Number.isFinite);
   DATE_MIN=new Date(Math.min(...dates));DATE_MAX=new Date(Math.max(...dates));
   if(!preserveState||!state.start||!state.end){
     state.range="maximum";
@@ -772,72 +776,10 @@ function cohortCampaignKeys(webinar=state.webinar){
   });
   return keys;
 }
-function selectedWebinarCampaignRange(webinar=state.webinar){
-  if(state.funnel==="all"||webinar==="all")return null;
-  const webinarEnd=parseDate(webinar);
-  const keys=cohortCampaignKeys(webinar);
-  const deliveryDates=[];
-  keys.forEach(key=>{
-    const parts=key.split("\u001f"),platform=parts[0],campaignId=parts[1];
-    const cohortWebinars=[...new Set(DATA.filter(row=>
-      row.platform===platform&&row.campaignId===campaignId&&row.offer===state.funnel&&
-      row.webinarDate instanceof Date&&!isNaN(row.webinarDate)
-    ).map(row=>isoDate(row.webinarDate)))].sort();
-    const index=cohortWebinars.indexOf(webinar);
-    const previous=index>0?parseDate(cohortWebinars[index-1]):null;
-    const next=index>=0&&index<cohortWebinars.length-1?parseDate(cohortWebinars[index+1]):null;
-    DATA.forEach(row=>{
-      if(row.platform!==platform||row.campaignId!==campaignId||!(row.spend||row.clicks))return;
-      if(row.date>webinarEnd||(previous&&row.date<=previous)||(next&&row.date>=next))return;
-      deliveryDates.push(row.date);
-    });
-  });
-  const leadDates=DATA.filter(row=>row.offer===state.funnel&&
-    row.webinarDate instanceof Date&&isoDate(row.webinarDate)===webinar&&
-    (state.platform==="all"||row.platform===state.platform)&&row.leads&&row.date<=webinarEnd
-  ).map(row=>row.date);
-  const dates=deliveryDates.length?deliveryDates:leadDates;
-  if(!dates.length)return null;
-  return {start:new Date(Math.min(...dates)),end:new Date(deliveryDates.length?Math.max(...deliveryDates):+webinarEnd)};
-}
-function selectedFunnelWebinarScopes(){
-  if(state.funnel==="all")return [];
-  const dates=[...new Set(DATA.filter(row=>row.offer===state.funnel&&
-    (state.platform==="all"||row.platform===state.platform)&&
-    row.webinarDate instanceof Date&&!isNaN(row.webinarDate)
-  ).map(row=>isoDate(row.webinarDate)))].sort();
-  return dates.map(webinar=>{
-    const range=selectedWebinarCampaignRange(webinar);
-    return range?{webinar,start:range.start,end:range.end,keys:cohortCampaignKeys(webinar)}:null;
-  }).filter(Boolean);
-}
-function applyWebinarDateRange(){
-  if(state.funnel!=="all"&&state.webinar==="all"){
-    const scopes=selectedFunnelWebinarScopes();
-    if(scopes.length){
-      state.range="custom";
-      state.start=new Date(Math.min(...scopes.map(scope=>+scope.start)));
-      state.end=new Date(Math.max(...scopes.map(scope=>+scope.end)));
-      dpUpdateTrigger();
-      return;
-    }
-  }
-  if(state.funnel==="all"||state.webinar==="all"){
-    state.range="maximum";
-    const range=calcPresetRange("maximum");
-    if(range){state.start=range.start;state.end=range.end}
-    dpUpdateTrigger();
-    return;
-  }
-  const range=selectedWebinarCampaignRange();
-  if(!range)return;
-  state.range="custom";state.start=range.start;state.end=range.end;dpUpdateTrigger();
-}
 function filteredRows(ignoreSearch=false,includeCurrentSelection=false){
   const start=+state.start,end=+state.end;
   const query=state.search.toLowerCase();
   const keys=cohortCampaignKeys();
-  const scopes=state.funnel!=="all"&&state.webinar==="all"?selectedFunnelWebinarScopes():[];
   return DATA.filter(row=>{
     const cohort=!!(row.leads||row.uniq||row.purchases||row.revenue||row.contactId);
     const deliveryOnly=!!(row.spend||row.clicks)&&!cohort;
@@ -846,9 +788,7 @@ function filteredRows(ignoreSearch=false,includeCurrentSelection=false){
     if(cohort&&state.webinar!=="all"&&(!(row.webinarDate instanceof Date)||isoDate(row.webinarDate)!==state.webinar))return false;
     if(deliveryOnly&&state.funnel!=="all"){
       const key=row.platform+"\u001f"+row.campaignId;
-      if(scopes.length){
-        if(!scopes.some(scope=>scope.keys.has(key)&&dateInRange(row.date,+scope.start,+scope.end)))return false;
-      }else if(keys.size&&!keys.has(key))return false;
+      if(!keys.has(key))return false;
     }
     return rowPassesDateRange(row,start,end)&&
     (!(state.selectedCampaigns.size&&(state.level!=="campaign"||includeCurrentSelection))||
@@ -866,14 +806,9 @@ function rowPassesDateRange(row,start,end){
   const hasCustomerMetric=!!(row.uniq||row.sameDay||row.later||row.unknown);
   const hasPurchaseMetric=!!(row.purchases||row.revenue);
   const deliveryInRange=hasDeliveryMetric&&dateInRange(row.date,start,end);
-  const saleDate=state.funnel!=="all"&&row.offer===state.funnel&&
-    row.webinarDate instanceof Date&&!isNaN(row.webinarDate)&&
-    (state.webinar==="all"||isoDate(row.webinarDate)===state.webinar)
-    ?row.webinarDate
-    :(row.customerSaleDate instanceof Date&&!isNaN(row.customerSaleDate)?row.customerSaleDate:row.date);
-  const hasLeadDate=row.customerLeadDate instanceof Date&&!isNaN(row.customerLeadDate);
-  const leadQualifies=!hasLeadDate||dateInRange(row.customerLeadDate,start,end);
-  const customerInRange=hasCustomerMetric&&dateInRange(saleDate,start,end)&&leadQualifies;
+  const saleDate=row.customerSaleDate instanceof Date&&!isNaN(row.customerSaleDate)
+    ?row.customerSaleDate:row.date;
+  const customerInRange=hasCustomerMetric&&dateInRange(saleDate,start,end);
   const purchaseInRange=hasPurchaseMetric&&dateInRange(saleDate,start,end);
   return deliveryInRange||customerInRange||purchaseInRange;
 }
@@ -884,13 +819,9 @@ function summarize(rows,startDate=state.start,endDate=state.end){
   const leadKeys=new Set(),customerKeys=new Set();
   let legacyLeads=0,legacyCustomers=0;
   rows.forEach(row=>{
-    const saleDate=state.funnel!=="all"&&row.offer===state.funnel&&
-      row.webinarDate instanceof Date&&!isNaN(row.webinarDate)&&
-      (state.webinar==="all"||isoDate(row.webinarDate)===state.webinar)
-      ?row.webinarDate
-      :(row.customerSaleDate instanceof Date&&!isNaN(row.customerSaleDate)?row.customerSaleDate:row.date);
+    const saleDate=row.customerSaleDate instanceof Date&&!isNaN(row.customerSaleDate)
+      ?row.customerSaleDate:row.date;
     const hasLeadDate=row.customerLeadDate instanceof Date&&!isNaN(row.customerLeadDate);
-    const leadQualifies=!hasLeadDate||dateInRange(row.customerLeadDate,start,end);
     if(dateInRange(row.date,start,end)){
       summary.spend+=row.spend||0;
       summary.clicks+=row.clicks||0;
@@ -903,20 +834,18 @@ function summarize(rows,startDate=state.start,endDate=state.end){
     if(dateInRange(saleDate,start,end)){
       summary.purchases+=row.purchases||0;
       summary.revenue+=row.revenue||0;
-      if(leadQualifies){
-        if(row.uniq){
-          const id=String(row.contactId||"");
-          if(id&&!id.startsWith("LEAD:"))customerKeys.add(id);
-          else legacyCustomers+=row.uniq;
-        }
-        summary.sameDay+=row.sameDay||0;
-        summary.later+=row.later||0;
-        summary.unknown+=row.unknown||0;
-        if(row.uniq&&hasLeadDate&&saleDate>=row.customerLeadDate){
-          const matureDays=Math.round((+saleDate-+row.customerLeadDate)/864e5);
-          summary.timeToMatureDays+=matureDays*row.uniq;
-          summary.timeToMatureCustomers+=row.uniq;
-        }
+      if(row.uniq){
+        const id=String(row.contactId||"");
+        if(id&&!id.startsWith("LEAD:"))customerKeys.add(id);
+        else legacyCustomers+=row.uniq;
+      }
+      summary.sameDay+=row.sameDay||0;
+      summary.later+=row.later||0;
+      summary.unknown+=row.unknown||0;
+      if(row.uniq&&hasLeadDate&&saleDate>=row.customerLeadDate){
+        const matureDays=Math.round((+saleDate-+row.customerLeadDate)/864e5);
+        summary.timeToMatureDays+=matureDays*row.uniq;
+        summary.timeToMatureCustomers+=row.uniq;
       }
     }
   });
@@ -1557,13 +1486,13 @@ document.querySelectorAll(".tab").forEach(tab=>tab.addEventListener("click",()=>
   state.page=1;renderColumnsMenu();render();
 }));
 $("platformFilter").addEventListener("change",()=>{
-  state.platform=$("platformFilter").value;resetHierarchy();populateFilters();applyWebinarDateRange();render();
+  state.platform=$("platformFilter").value;resetHierarchy();populateFilters();render();
 });
 $("funnelFilter").addEventListener("change",()=>{
-  state.funnel=$("funnelFilter").value;state.webinar="all";resetHierarchy();populateWebinarFilter();applyWebinarDateRange();render();
+  state.funnel=$("funnelFilter").value;state.webinar="all";resetHierarchy();populateWebinarFilter();render();
 });
 $("webinarFilter").addEventListener("change",()=>{
-  state.webinar=$("webinarFilter").value;resetHierarchy();applyWebinarDateRange();render();
+  state.webinar=$("webinarFilter").value;resetHierarchy();render();
 });
 $("dpTrigger").addEventListener("click",dpOpen);
 $("dpCancel").addEventListener("click",dpClose);
