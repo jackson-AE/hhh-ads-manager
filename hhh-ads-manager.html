@@ -584,7 +584,9 @@ function mapRows(rows){
     const campaignKey=String(row["Campaign Path"]||campaign).trim();
     const adsetKey=String(row["Ad Set Path"]||campaignKey+" > "+adset).trim();
     const adKey=String(row["Ad Path"]||adsetKey+" > "+ad).trim();
-    const offer=normalizeOffer(row.Offer,[campaign,adset,ad,destination,row["Tracked Funnel"],row["Funnel Name"],row["Source/Channel"]].join(" "));
+    const hasSale=!!(cleanNumber(row["New Customer"]||row["Unique Sales"])||
+      cleanNumber(row.Purchase||row.Orders)||cleanNumber(row.Revenue));
+    const offer=normalizeOffer(row.Offer,hasSale?"":[campaign,adset,ad,destination,row["Tracked Funnel"],row["Funnel Name"],row["Source/Channel"]].join(" "));
     return {
     date:parseDate(row.Date),
     webinarDate:parseDate(row["Webinar Date"]),
