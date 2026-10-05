@@ -537,11 +537,12 @@ function mapPlatform(value){
 }
 function detectOfferMarker(value){
   const text=String(value||"").toLowerCase();
+  const normalized=text.replace(/\([^)]*\)/g," ").replace(/[^a-z0-9]+/g," ").replace(/\s+/g," ").trim();
   const losingWeight=text.indexOf("ae - 3 day losing weight");
   const thyroid=text.indexOf("ae - thyroid transformation masterclass");
   if(losingWeight>=0&&thyroid>=0)return losingWeight<thyroid?CONFIG.funnels[0]:CONFIG.funnels[1];
   if(losingWeight>=0||text.includes("3dlwm")||text.includes("3d lwm")||text.includes("weight loss masterclass")||text.includes("wlmc"))return CONFIG.funnels[0];
-  if(thyroid>=0||text.includes("3dttm")||text.includes("ttmc")||text.includes("thyroid masterclass"))return CONFIG.funnels[1];
+  if(thyroid>=0||normalized.includes("thyroid transformation")||text.includes("3dttm")||text.includes("ttmc")||text.includes("thyroid masterclass"))return CONFIG.funnels[1];
   return "";
 }
 function normalizeOffer(value,fallbackText=""){
